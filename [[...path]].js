@@ -1,13 +1,20 @@
 // ============================================
-// Moss / mosi 语音接口 · 跨域中转（Vercel 版）
-// 部署成功后，语音配置里的 Base URL 填：
+// Moss / mosi 语音接口 · 跨域中转站（Vercel 版 · 流式转发）
+// 部署后，语音配置里的 Base URL 填：
 // https://你的项目名.vercel.app/api
 // ============================================
 
+import { Readable } from 'node:stream';
+
 const UPSTREAM = 'https://api.mosi.cn';
 
-// 关键：不解析 body，原样转发（TTS 的 JSON 和 STT 的音频文件都能过）
-export const config = { api: { bodyParser: false } };
+// bodyParser: false → 不解析请求体，原样转发（JSON 和音频都能过）
+// responseLimit: false → 不限制响应大小
+// maxDuration: 60 → 最多允许等 60 秒，避免音频没生成完就被掐断
+export const config = {
+  api: { bodyParser: false, responseLimit: false },
+  maxDuration: 60,
+};
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -27,10 +34,10 @@ function readRaw(req) {
 }
 
 export default async function handler(req, res) {
-  // 1) 先把跨域头挂上，这样无论成功失败浏览器都不会拦
+  // 先把跨域头挂上，无论成功失败浏览器都不会拦
   for (const [k, v] of Object.entries(CORS)) res.setHeader(k, v);
 
-  // 2) 预检请求直接放行
+  // 浏览器的预检请求，直接放行
   if (req.method === 'OPTIONS') {
     res.status(204).end();
     return;
@@ -40,7 +47,7 @@ export default async function handler(req, res) {
   const segs = req.query.path;
   const pathStr = segs ? '/' + (Array.isArray(segs) ? segs.join('/') : segs) : '';
 
-  // 3) 根路径：健康检查，用来确认部署成功
+  // 根路径：健康检查
   if (!pathStr || pathStr === '/') {
     res.status(200).json({
       ok: true,
@@ -50,17 +57,17 @@ export default async function handler(req, res) {
     return;
   }
 
-  // 4) 拼出真实的上游地址
+  // 拼出真实的上游地址
   const target = UPSTREAM + pathStr + (u.search || '');
 
-  // 5) 原样带上请求头（含 Authorization、Content-Type）
+  // 原样带上请求头（含 Authorization、Content-Type）
   const headers = {};
   for (const [k, v] of Object.entries(req.headers)) {
-    if (['host', 'connection', 'accept-encoding', 'cf-connecting-ip'].includes(k)) continue;
+    if (['host', 'connection', 'accept-encoding', 'content-length', 'cf-connecting-ip'].includes(k)) continue;
     headers[k] = v;
   }
 
-  // 6) 原样带上请求体
+  // 原样带上请求体
   let body;
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     const raw = await readRaw(req);
@@ -71,12 +78,33 @@ export default async function handler(req, res) {
   try {
     upstream = await fetch(target, { method: req.method, headers, body });
   } catch (e) {
-    res.status(502).json({ error: 'upstream_unreachable', detail: String(e) });
+    res.status(502).json({
+      error: 'upstream_unreachable',
+      detail: String(e),
+      target,
+    });
     return;
   }
 
-  // 7) 原样把结果（音频 / JSON）吐回去
-  const buf = Buffer.from(await upstream.arrayBuffer());
-  res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/octet-stream');
-  res.status(upstream.status).send(buf);
+  const ct = upstream.headers.get('content-type') || 'application/octet-stream';
+
+  // 把上游状态码暴露出来，方便排查（浏览器里能看到）
+  res.setHeader('X-Proxy-Upstream-Status', String(upstream.status));
+  res.setHeader('Content-Type', ct);
+
+  // 上游明确报错且返回的是 JSON：读完直接给你看真实错误
+  if (!upstream.ok && ct.includes('application/json')) {
+    const text = await upstream.text();
+    res.status(upstream.status).send(text);
+    return;
+  }
+
+  res.status(upstream.status);
+
+  // 关键改动：流式转发，边收边发，不再等整段音频
+  if (upstream.body) {
+    Readable.fromWeb(upstream.body).pipe(res);
+  } else {
+    res.end();
+  }
 }
