@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>语音中转站</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0f1115;
+      color: #e8eaed;
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+    .card {
+      max-width: 520px;
+      background: #1a1d23;
+      border: 1px solid #2a2f38;
+      border-radius: 16px;
+      padding: 28px;
+    }
+    h1 { font-size: 20px; margin: 0 0 12px; }
+    p { line-height: 1.7; color: #a8b0bd; font-size: 14px; margin: 8px 0; }
+    code {
+      background: #0f1115;
+      padding: 2px 6px;
+      border-radius: 6px;
+      color: #7ee787;
+      word-break: break-all;
+      font-size: 13px;
+    }
+    .ok { color: #7ee787; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>✅ 语音中转站已上线</h1>
+    <p class="ok">服务运行正常</p>
+    <p>请回到语音配置页面，把「接口地址 (Base URL)」改成：</p>
+    <p><code id="base"></code></p>
+    <p style="margin-top:16px;color:#6b7280;font-size:12px;">
+      结尾的 /api 不要漏。API Key 仍填你自己的原始密钥，中转站不保存任何数据。
+    </p>
+  </div>
+  <script>
+    document.getElementById('base').textContent = location.origin + '/api';
+  </script>
+</body>
+</html>

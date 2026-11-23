@@ -1,0 +1,9 @@
+{
+  "name": "moss-tts-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Moss / mosi 语音接口跨域中转",
+  "engines": {
+    "node": ">=18"
+  }
+}
